@@ -4,7 +4,7 @@
 
 ## Installation (Gradle - Local)
 
-1. Clone the repo (https://github.com/project-transparent/diamond).
+1. Clone the repo (https://github.com/project-transparent/emerald).
 2. Run `gradlew publishToMavenLocal` in the root directory of the repo.
 3. Add `mavenLocal()` to your plugin repositories.
 4. Add `id 'org.transparent.emerald' version '<version>'` to your plugins.
