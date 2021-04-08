@@ -1,2 +1,8 @@
-rootProject.name = 'emerald'
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        mavenLocal()
+    }
+}
 
+rootProject.name = 'emerald'

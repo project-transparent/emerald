@@ -2,10 +2,9 @@ package org.transparent.emerald;
 
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
-import org.gradle.api.artifacts.Configuration;
+import org.gradle.api.artifacts.ConfigurationContainer;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JavaPluginConvention;
-import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.compile.JavaCompile;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Opcodes;
@@ -14,6 +13,8 @@ import javax.annotation.Nonnull;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.file.*;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -28,15 +29,11 @@ public final class EmeraldPlugin implements Plugin<Project> {
     public void apply(@Nonnull Project project) {
         project.getPluginManager().apply(JavaPlugin.class);
 
-        final Provider<Configuration> configuration = project
-                .getConfigurations()
-                .register("compilerPlugin");
+        final ConfigurationContainer container = project.getConfigurations();
+        container.getByName("annotationProcessor", config ->
+                config.extendsFrom(container.create("compilerPlugin")));
 
         project.afterEvaluate(project2 -> {
-            project2.getConfigurations()
-                    .getByName("annotationProcessor", config ->
-                            config.extendsFrom(configuration.get()));
-
             final Set<File> files = project2
                     .getConfigurations()
                     .getByName("compilerPlugin")
@@ -44,12 +41,8 @@ public final class EmeraldPlugin implements Plugin<Project> {
             final List<String> names = new ArrayList<>();
             for (File file : files) {
                 try (FileSystem fs = getFileSystem(file)) {
-                    getServicesFile(fs).ifPresent(path -> {
-                        getPluginStreams(fs, path)
-                                .stream()
-                                .map(this::getPluginName)
-                                .forEach(names::add);
-                    });
+                    getServicesFile(fs).ifPresent(path ->
+                            names.addAll(getPluginNames(fs, path, file)));
                 } catch (IOException e) {
                     throw new RuntimeException("Could not initialize file system for jar", e);
                 }
@@ -60,6 +53,7 @@ public final class EmeraldPlugin implements Plugin<Project> {
                         .getOptions()
                         .getCompilerArgs();
                 names.forEach(name -> args.add("-Xplugin:" + name));
+
                 final JavaPluginConvention convention = project2
                         .getConvention()
                         .getPlugin(JavaPluginConvention.class);
@@ -86,12 +80,10 @@ public final class EmeraldPlugin implements Plugin<Project> {
         return Optional.empty();
     }
 
-    private List<InputStream> getPluginStreams(FileSystem fs, Path path) {
+    private List<String> getPluginNames(FileSystem fs, Path path, File file) {
         try {
             return Files.lines(path)
-                    .map(this::getClassFilePath)
-                    .map(fs::getPath)
-                    .map(this::toInputStream)
+                    .map(name -> getPluginName(fs, name, file))
                     .collect(Collectors.toList());
         } catch (IOException e) {
             throw new RuntimeException(e);
@@ -115,19 +107,37 @@ public final class EmeraldPlugin implements Plugin<Project> {
         return null;
     }
 
-    private String getPluginName(InputStream stream) {
-        if (stream != null) {
-            try {
+    private String getPluginName(FileSystem fs, String name, File file) {
+        final Path path = fs.getPath(getClassFilePath(name));
+        try (final InputStream stream = toInputStream(path)) {
+            if (stream != null) {
                 final ClassReader reader = new ClassReader(stream);
                 final NameFinder finder = new NameFinder(Opcodes.ASM9);
                 reader.accept(finder, SKIP_DEBUG | SKIP_FRAMES);
-                return finder.name;
-            } catch (IOException e) {
-                throw new RuntimeException("Could not get compiler plugin name", e);
+                return (finder.name == null)
+                        ? getPluginName(file, name)
+                        : finder.name;
             }
+        } catch(IOException e) {
+            throw new RuntimeException("Could not get compiler plugin name (Bytecode)", e);
         }
         return "";
     }
+
+    private String getPluginName(File file, String name) {
+        try {
+            return ((com.sun.source.util.Plugin) Class
+                    .forName(name, false,
+                            new URLClassLoader(new URL[]{
+                                    file.toURI().toURL()
+                            }))
+                    .newInstance())
+                    .getName();
+        } catch (IOException | ReflectiveOperationException e) {
+            throw new RuntimeException("Could not get compiler plugin name (Classloader)", e);
+        }
+    }
+
 
     private boolean containsModuleDescriptor(JavaPluginConvention convention) {
         return convention.getSourceSets()
