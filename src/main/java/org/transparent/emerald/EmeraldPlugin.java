@@ -4,6 +4,7 @@ import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.plugins.JavaPlugin;
+import org.gradle.api.plugins.JavaPluginConvention;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.compile.JavaCompile;
 import org.objectweb.asm.ClassReader;
@@ -54,12 +55,22 @@ public final class EmeraldPlugin implements Plugin<Project> {
                 }
             }
 
-            project.getTasks().withType(JavaCompile.class, task -> names
-                    .forEach(name -> task
-                            .getOptions()
-                            .getCompilerArgs()
-                            .add("-Xplugin:" + name)
-                    ));
+            project.getTasks().withType(JavaCompile.class, task -> {
+                final List<String> args = task
+                        .getOptions()
+                        .getCompilerArgs();
+                names.forEach(name -> args.add("-Xplugin:" + name));
+                final JavaPluginConvention convention = project2
+                        .getConvention()
+                        .getPlugin(JavaPluginConvention.class);
+                // Offers extra Java 9 support.
+                // This setup is suggested by Manifold.
+                if (convention.getSourceCompatibility().isJava9Compatible()
+                        && containsModuleDescriptor(convention)) {
+                    args.add("--module-path");
+                    args.add(task.getClasspath().getAsPath());
+                }
+            });
         });
     }
 
@@ -117,5 +128,13 @@ public final class EmeraldPlugin implements Plugin<Project> {
             }
         }
         return "";
+    }
+
+    private boolean containsModuleDescriptor(JavaPluginConvention convention) {
+        return convention.getSourceSets()
+                .getByName("main")
+                .getAllJava()
+                .getFiles()
+                .contains(new File("module-info.java"));
     }
 }
