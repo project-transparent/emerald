@@ -51,7 +51,7 @@ public final class EmeraldPlugin implements Plugin<Project> {
                                 .forEach(names::add);
                     });
                 } catch (IOException e) {
-                    e.printStackTrace();
+                    throw new RuntimeException("Could not initialize file system for jar", e);
                 }
             }
 
@@ -94,9 +94,8 @@ public final class EmeraldPlugin implements Plugin<Project> {
                     .map(this::toInputStream)
                     .collect(Collectors.toList());
         } catch (IOException e) {
-            e.printStackTrace();
+            throw new RuntimeException(e);
         }
-        return Collections.emptyList();
     }
 
     private String getClassFilePath(String s) {
@@ -110,7 +109,7 @@ public final class EmeraldPlugin implements Plugin<Project> {
             try {
                 return Files.newInputStream(path);
             } catch (IOException e) {
-                e.printStackTrace();
+                throw new RuntimeException("Could not convert path to input stream", e);
             }
         }
         return null;
@@ -124,7 +123,7 @@ public final class EmeraldPlugin implements Plugin<Project> {
                 reader.accept(finder, SKIP_DEBUG | SKIP_FRAMES);
                 return finder.name;
             } catch (IOException e) {
-                e.printStackTrace();
+                throw new RuntimeException("Could not get compiler plugin name", e);
             }
         }
         return "";
